@@ -149,6 +149,22 @@ async function getJson<T>(
   const res = await fetchGithub(path, opts);
 
   if (res.status === 404) throw new GitHubNotFoundError(path);
+
+  // GitHub uses 403 (and sometimes 429) to signal rate-limit exhaustion.
+  // The header `x-ratelimit-remaining: 0` disambiguates throttling from
+  // genuine 403 (e.g. private repo without auth). Either way we treat it
+  // as degraded so callers can serve cached/stale or render a clean
+  // service-degraded page rather than a generic 500.
+  if (res.status === 403 || res.status === 429) {
+    const remaining = Number(res.headers.get("x-ratelimit-remaining"));
+    if (remaining === 0) {
+      if (cached) return cached.data;
+      throw new GitHubDegradedError(
+        `GitHub rate limit exhausted on ${path}`,
+      );
+    }
+  }
+
   if (!res.ok) {
     if (cached) return cached.data; // fall back to stale on unexpected failure
     throw new Error(`GitHub ${res.status} for ${path}`);

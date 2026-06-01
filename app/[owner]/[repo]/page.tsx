@@ -14,7 +14,7 @@
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
 
-import { GitHubNotFoundError } from "@/lib/github";
+import { GitHubDegradedError, GitHubNotFoundError } from "@/lib/github";
 import { getRepoMetaCached } from "@/lib/repo-meta-cached";
 
 import {
@@ -53,7 +53,13 @@ export default async function RepoPage({ params }: PageProps) {
     await getRepoMetaCached(owner, repo);
   } catch (e) {
     if (e instanceof GitHubNotFoundError) notFound();
-    throw e; // route-level error.tsx will catch
+    if (e instanceof GitHubDegradedError) {
+      // We can't confirm whether the repo exists because GitHub is throttled
+      // and we have nothing cached. This is semantically a 503 (service
+      // unavailable), not a 500. Render a useful fallback inline.
+      return <DegradedFallback owner={owner} repo={repo} />;
+    }
+    throw e; // anything else: route-level error.tsx will catch
   }
 
   return (
@@ -80,6 +86,30 @@ export default async function RepoPage({ params }: PageProps) {
       <footer className="mt-12 border-t border-zinc-800 pt-6 text-center text-sm text-zinc-500">
         Made with <span className="text-zinc-300">repo-dive</span> · paste a repo URL to analyze yours
       </footer>
+    </main>
+  );
+}
+
+function DegradedFallback({ owner, repo }: { owner: string; repo: string }) {
+  return (
+    <main className="mx-auto flex min-h-screen max-w-2xl flex-col items-center justify-center px-6 text-center">
+      <p className="text-sm uppercase tracking-wider text-amber-400">
+        Service degraded
+      </p>
+      <h1 className="mt-3 text-3xl font-bold">
+        Can&apos;t reach GitHub right now
+      </h1>
+      <p className="mt-3 max-w-md text-zinc-400">
+        We&apos;re currently rate-limited by GitHub and we don&apos;t have{" "}
+        <span className="font-mono text-zinc-300">
+          {owner}/{repo}
+        </span>{" "}
+        in cache yet. Try again in a few minutes, or set{" "}
+        <code className="rounded bg-zinc-900 px-1.5 py-0.5 font-mono text-xs">
+          GITHUB_PAT
+        </code>{" "}
+        if you&apos;re running locally.
+      </p>
     </main>
   );
 }

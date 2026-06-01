@@ -139,6 +139,22 @@ describe("getRepoMeta", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  test("403 with x-ratelimit-remaining=0 → GitHubDegradedError (anonymous burn)", async () => {
+    fetchMock = mock(() =>
+      Promise.resolve(
+        mockResponse({ message: "rate limit exceeded" }, {
+          status: 403,
+          remaining: 0,
+          reset: Math.floor(Date.now() / 1000) + 3600,
+        }),
+      ),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    await expect(getRepoMeta("vercel", "next.js")).rejects.toThrow(
+      GitHubDegradedError,
+    );
+  });
+
   test("breaker open + no cache → GitHubDegradedError", async () => {
     // Trip the breaker by setting state via a recorded request to a different repo.
     fetchMock = mock(() =>
