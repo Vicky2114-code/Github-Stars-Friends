@@ -47,7 +47,10 @@ const sampleRepoRaw = {
   topics: ["react", "ssr"],
   stargazers_count: 123000,
   forks_count: 27000,
+  // GitHub returns watchers_count (legacy alias = stars) AND subscribers_count
+  // (actual watchers). RepoMeta.watchers must map to subscribers_count.
   watchers_count: 123000,
+  subscribers_count: 2100,
   open_issues_count: 2500,
   default_branch: "canary",
   created_at: "2016-10-05T00:00:00Z",
@@ -82,6 +85,17 @@ describe("getRepoMeta", () => {
     expect(repo.stars).toBe(123000);
     expect(repo.topics).toEqual(["react", "ssr"]);
     expect(repo.owner.login).toBe("vercel");
+  });
+
+  // Regression: QA-B1 — watchers showed star count instead of actual watchers
+  // Found by /qa on 2026-06-01
+  // Report: .gstack/qa-reports/qa-report-localhost-2026-06-01.md
+  // GitHub's repo API returns watchers_count (legacy alias = stars) AND
+  // subscribers_count (real watchers). RepoMeta.watchers must use the latter.
+  test("regression: watchers uses subscribers_count not watchers_count", async () => {
+    const repo = await getRepoMeta("vercel", "next.js");
+    expect(repo.watchers).toBe(2100); // subscribers_count
+    expect(repo.watchers).not.toBe(repo.stars); // not the legacy alias
   });
 
   test("cache hit: second call does not hit fetch", async () => {

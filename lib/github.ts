@@ -192,7 +192,12 @@ export async function getRepoMeta(
     topics: string[];
     stargazers_count: number;
     forks_count: number;
+    // GitHub returns BOTH fields. `watchers_count` is a legacy alias for
+    // stargazers_count and is ALWAYS equal to stars. The actual watcher
+    // count (people who get notifications for the repo) is `subscribers_count`.
+    // See https://docs.github.com/en/rest/repos/repos#get-a-repository
     watchers_count: number;
+    subscribers_count: number;
     open_issues_count: number;
     default_branch: string;
     created_at: string;
@@ -215,7 +220,7 @@ export async function getRepoMeta(
     topics: raw.topics ?? [],
     stars: raw.stargazers_count,
     forks: raw.forks_count,
-    watchers: raw.watchers_count,
+    watchers: raw.subscribers_count,
     openIssues: raw.open_issues_count,
     defaultBranch: raw.default_branch,
     createdAt: raw.created_at,
