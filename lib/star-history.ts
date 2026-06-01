@@ -44,16 +44,29 @@ export type StarHistoryResult = {
 
 const PER_PAGE = 100;
 const MAX_SAMPLED_PAGES = 10;
+/**
+ * GitHub caps stargazers pagination at page 400 — page 401+ returns 422.
+ * This means the maximum history we can reconstruct is the first 40,000 stars.
+ * For mega-repos (vercel/next.js, microsoft/vscode) we sample within this
+ * window and the chart shows "early history" with a footnote.
+ */
+const GITHUB_PAGE_LIMIT = 400;
 
 /**
  * Compute the list of page numbers to fetch for a repo with `totalStars`.
  *
  * Exported for tests so we can assert the sampling math without hitting fetch.
+ *
+ * For repos exceeding ~40k stars (GitHub's pagination cap), we sample WITHIN
+ * the available window [1..400]. The result is "early history only" rather
+ * than nothing. Truly complete history requires our own snapshot worker (out
+ * of MVP scope per ENG-PLAN.md D2 option C).
  */
 export function computeSampledPages(totalStars: number): number[] {
   if (totalStars <= 0) return [];
 
-  const totalPages = Math.ceil(totalStars / PER_PAGE);
+  const naturalPages = Math.ceil(totalStars / PER_PAGE);
+  const totalPages = Math.min(naturalPages, GITHUB_PAGE_LIMIT);
 
   // Small repo: fetch every page, no sampling needed.
   if (totalPages <= MAX_SAMPLED_PAGES) {
@@ -61,7 +74,7 @@ export function computeSampledPages(totalStars: number): number[] {
   }
 
   // Large repo: first + last + 8 evenly-spaced middles.
-  // Use floats then dedupe to handle the "8 spaces, 10 pages total" math.
+  // "last" is the last fetchable page (≤ 400), not totalStars/100.
   const inner = MAX_SAMPLED_PAGES - 2; // 8 middle samples
   const span = totalPages - 1; // distance between page 1 and page totalPages
   const step = span / (inner + 1);

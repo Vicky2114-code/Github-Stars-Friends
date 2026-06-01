@@ -21,30 +21,52 @@
  *                                            └─[now > resetAt]─▶ CLOSED
  */
 
-const THRESHOLD = 500;
+/**
+ * Threshold is adaptive: we trip when remaining < 10% of the total limit,
+ * floored at 5 (so the anonymous 60/hr bucket trips at 6, the authenticated
+ * 5000/hr bucket trips at 500). A flat 500 threshold was wrong for
+ * anonymous traffic — see the bug found during T6 verification.
+ */
+const ABSOLUTE_FLOOR = 5;
+const PERCENT_THRESHOLD = 0.1;
 
 type State = {
   remaining: number; // last-seen remaining count
+  limit: number; // last-seen limit (defaults to 5000 = authenticated default)
   resetAt: number; // epoch ms when the bucket resets
 };
 
-let state: State = { remaining: Number.POSITIVE_INFINITY, resetAt: 0 };
+const initial: State = {
+  remaining: Number.POSITIVE_INFINITY,
+  limit: 5000,
+  resetAt: 0,
+};
+let state: State = { ...initial };
 
 export function recordRateLimitHeaders(headers: Headers): void {
   const remaining = Number(headers.get("x-ratelimit-remaining"));
+  const limit = Number(headers.get("x-ratelimit-limit"));
   const reset = Number(headers.get("x-ratelimit-reset"));
   if (Number.isFinite(remaining) && remaining < state.remaining) {
-    state = { remaining, resetAt: reset * 1000 };
+    state = {
+      remaining,
+      limit: Number.isFinite(limit) && limit > 0 ? limit : state.limit,
+      resetAt: reset * 1000,
+    };
   }
+}
+
+function threshold(limit: number): number {
+  return Math.max(ABSOLUTE_FLOOR, Math.floor(limit * PERCENT_THRESHOLD));
 }
 
 export function isCircuitOpen(): boolean {
   if (Date.now() > state.resetAt) {
     // Window expired — assume the bucket is healthy until proven otherwise.
-    state = { remaining: Number.POSITIVE_INFINITY, resetAt: 0 };
+    state = { ...initial };
     return false;
   }
-  return state.remaining < THRESHOLD;
+  return state.remaining < threshold(state.limit);
 }
 
 export function getRateLimitState(): Readonly<State> {
@@ -55,5 +77,5 @@ export function getRateLimitState(): Readonly<State> {
  * Test-only: reset the tracker between tests. No-op in production code paths.
  */
 export function __resetRateLimit(): void {
-  state = { remaining: Number.POSITIVE_INFINITY, resetAt: 0 };
+  state = { ...initial };
 }

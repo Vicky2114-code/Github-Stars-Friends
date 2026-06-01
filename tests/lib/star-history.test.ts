@@ -46,20 +46,28 @@ describe("computeSampledPages", () => {
     expect(pages[pages.length - 1]).toBe(11);
   });
 
-  test("50000 stars (500 pages): sample 10 evenly", () => {
+  test("50000 stars: capped at GitHub's 400-page pagination limit", () => {
+    // Natural would be 500 pages; GitHub's stargazers endpoint refuses
+    // pagination beyond 400. Sampling stays within the available window.
     const pages = computeSampledPages(50000);
     expect(pages.length).toBeLessThanOrEqual(10);
     expect(pages[0]).toBe(1);
-    expect(pages[pages.length - 1]).toBe(500);
-    // Spread should be roughly even
+    expect(pages[pages.length - 1]).toBe(400);
     for (let i = 1; i < pages.length; i++) {
       const gap = pages[i] - pages[i - 1];
       expect(gap).toBeGreaterThan(0); // strictly increasing
     }
   });
 
-  test("123456 stars: still capped at 10 pages", () => {
-    expect(computeSampledPages(123456).length).toBeLessThanOrEqual(10);
+  test("123456 stars: also capped at page 400", () => {
+    const pages = computeSampledPages(123456);
+    expect(pages.length).toBeLessThanOrEqual(10);
+    expect(pages[pages.length - 1]).toBe(400);
+  });
+
+  test("40000 stars (exactly the cap): last page is 400", () => {
+    const pages = computeSampledPages(40000);
+    expect(pages[pages.length - 1]).toBe(400);
   });
 });
 
@@ -123,7 +131,7 @@ describe("getStarHistory", () => {
     expect(result.points[49].stars).toBe(50);
   });
 
-  test("large repo (50k stars): 10 pages sampled, cumulative counts span 1..49900+", async () => {
+  test("large repo (50k stars, page-capped at 400): cumulative counts span 1..40000", async () => {
     const t0 = Date.UTC(2020, 0, 1);
     const fetchMock = mock((_input: unknown) =>
       Promise.resolve(
@@ -147,9 +155,11 @@ describe("getStarHistory", () => {
     expect(result.points).toHaveLength(1000);
     // First sampled point should be cumulative 1 (page 1, index 0)
     expect(result.points[0].stars).toBe(1);
-    // Last sampled point should be cumulative 50000 (page 500, index 99)
+    // Last sampled point should be cumulative 40000 (page 400, index 99) —
+    // GitHub caps stargazers pagination at page 400, so we can only
+    // reconstruct the first 40k stars.
     const lastByStars = [...result.points].sort((a, b) => b.stars - a.stars)[0];
-    expect(lastByStars.stars).toBe(50000);
+    expect(lastByStars.stars).toBe(40000);
   });
 
   test("points are sorted by date ascending", async () => {
