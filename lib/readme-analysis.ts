@@ -122,9 +122,20 @@ export async function getReadmeAnalysis(
   let parsed: { score: number; issues: string[] };
   try {
     parsed = await callGeminiForAnalysis(prompt, apiKey);
-  } catch {
+  } catch (e) {
     if (cached) return cached.data; // serve stale on transient failure
-    return { score: null, issues: [], error: "gemini-unavailable" };
+    // Distinguish schema/parse failures from genuine API unreachability so
+    // the user-facing error message is informative.
+    const msg = e instanceof Error ? e.message : "";
+    const isSchemaFailure =
+      msg === "json-parse" ||
+      msg === "analysis-schema" ||
+      msg === "envelope-schema";
+    return {
+      score: null,
+      issues: [],
+      error: isSchemaFailure ? "gemini-bad-response" : "gemini-unavailable",
+    };
   }
 
   const result: ReadmeAnalysisResult = {
@@ -163,6 +174,11 @@ async function callGeminiForAnalysis(
   prompt: string,
   apiKey: string,
 ): Promise<{ score: number; issues: string[] }> {
+  // QA-B3: bumped maxOutputTokens 500 -> 1024 (long READMEs were truncating
+  // the JSON output, throwing json-parse, surfacing as "gemini-unavailable"
+  // on repos like garrytan/gstack with verbose READMEs). Also added an
+  // explicit responseSchema so Gemini is hard-constrained to {score, issues}
+  // instead of just being asked nicely via responseMimeType.
   const res = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -170,15 +186,33 @@ async function callGeminiForAnalysis(
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
         temperature: 0.1,
-        maxOutputTokens: 500,
+        maxOutputTokens: 1024,
         responseMimeType: "application/json",
+        responseSchema: {
+          type: "object",
+          properties: {
+            score: { type: "integer", minimum: 0, maximum: 10 },
+            issues: {
+              type: "array",
+              items: { type: "string" },
+              maxItems: 8,
+            },
+          },
+          required: ["score", "issues"],
+        },
       },
     }),
   });
 
   if (!res.ok) throw new Error(`gemini ${res.status}`);
 
-  const raw: unknown = await res.json();
+  let raw: unknown;
+  try {
+    raw = await res.json();
+  } catch {
+    // Non-JSON response body — Gemini returned plain text or HTML
+    throw new Error("envelope-schema");
+  }
   const envelope = GeminiEnvelopeSchema.safeParse(raw);
   if (!envelope.success) throw new Error("envelope-schema");
 

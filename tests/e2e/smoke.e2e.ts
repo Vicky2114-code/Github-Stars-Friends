@@ -68,12 +68,15 @@ test.describe("repo-dive smoke", () => {
     expect(body).toContain("repo-dive");
   });
 
-  test("unknown repo path returns 200 (not 500)", async ({ page }) => {
+  test("unknown repo path renders gracefully (not 500)", async ({ page }) => {
     const response = await page.goto("/this-org-does-not/exist-12345");
     expect(response).not.toBeNull();
-    expect(response!.status()).toBe(200);
-    // Either "Repo not found" (if GitHub confirmed 404) or "Service degraded"
-    // (if we were rate-limited and couldn't confirm) — both are acceptable.
+    // Two valid outcomes depending on whether GitHub was reachable:
+    //   - 404: GitHub confirmed the repo doesn't exist → not-found.tsx
+    //   - 200: rate-limited or couldn't reach GitHub → DegradedFallback
+    // The wrong outcome (proving a regression) would be 500 from error.tsx.
+    const status = response!.status();
+    expect([200, 404]).toContain(status);
     const body = await page.content();
     expect(body).toMatch(/Repo not found|Service degraded/);
   });

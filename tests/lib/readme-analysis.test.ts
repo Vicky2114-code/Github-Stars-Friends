@@ -134,7 +134,7 @@ describe("getReadmeAnalysis", () => {
     expect(result.issues).toEqual(["needs install steps"]);
   });
 
-  test("CRITICAL GAP: garbage Gemini envelope → no crash, score: null", async () => {
+  test("CRITICAL GAP: garbage Gemini envelope → no crash, gemini-bad-response", async () => {
     const fetchMock = makeRouter(
       () => githubReadmeResponse("# Foo"),
       () =>
@@ -163,10 +163,12 @@ describe("getReadmeAnalysis", () => {
     const result = await getReadmeAnalysis("foo", "bar");
 
     expect(result.score).toBeNull();
-    expect(result.error).toBe("gemini-unavailable");
+    // QA-B3: schema/parse failures now tag as gemini-bad-response
+    // (informative) instead of gemini-unavailable (transient network).
+    expect(result.error).toBe("gemini-bad-response");
   });
 
-  test("inner JSON wrong shape (no score field) → score: null", async () => {
+  test("inner JSON wrong shape (no score field) → gemini-bad-response", async () => {
     const router = mock((input: unknown) => {
       const url = typeof input === "string" ? input : (input as Request).url;
       if (url.includes("api.github.com")) {
@@ -179,7 +181,60 @@ describe("getReadmeAnalysis", () => {
     const result = await getReadmeAnalysis("foo", "bar");
 
     expect(result.score).toBeNull();
-    expect(result.error).toBe("gemini-unavailable");
+    expect(result.error).toBe("gemini-bad-response");
+  });
+
+  // Regression: QA-B3 — truncated JSON output (long-README + low token cap)
+  // Found by /qa on 2026-06-01 — garrytan/gstack consistently failed
+  // README quality with "Gemini API temporarily unreachable". Real cause:
+  // Gemini ran out of output tokens mid-JSON. Now we tag it as
+  // gemini-bad-response (schema failure) and have bumped tokens to 1024
+  // + added responseSchema for stricter Gemini compliance.
+  test("regression: truncated JSON from Gemini → gemini-bad-response not gemini-unavailable", async () => {
+    const router = mock((input: unknown) => {
+      const url = typeof input === "string" ? input : (input as Request).url;
+      if (url.includes("api.github.com")) {
+        return Promise.resolve(githubReadmeResponse("# Foo"));
+      }
+      // Simulate Gemini hitting maxOutputTokens mid-string in the JSON
+      return Promise.resolve(
+        geminiAnalysisResponse('{"score": 6, "issues": ["add a quickstart e'),
+      );
+    });
+    globalThis.fetch = router as unknown as typeof fetch;
+
+    const result = await getReadmeAnalysis("foo", "bar");
+
+    expect(result.score).toBeNull();
+    expect(result.error).toBe("gemini-bad-response");
+  });
+
+  // Regression: QA-B3 — verify the request now sends responseSchema +
+  // maxOutputTokens=1024 so Gemini is hard-constrained on long-README inputs.
+  test("regression: request includes responseSchema and maxOutputTokens=1024", async () => {
+    let geminiBody: unknown = null;
+    const router = mock((input: unknown, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : (input as Request).url;
+      if (url.includes("api.github.com")) {
+        return Promise.resolve(githubReadmeResponse("# Foo"));
+      }
+      if (init?.body) {
+        geminiBody = JSON.parse(String(init.body));
+      }
+      return Promise.resolve(
+        geminiAnalysisResponse('{"score": 7, "issues": ["polish"]}'),
+      );
+    });
+    globalThis.fetch = router as unknown as typeof fetch;
+
+    await getReadmeAnalysis("foo", "bar");
+
+    const cfg = (geminiBody as { generationConfig?: Record<string, unknown> })
+      ?.generationConfig;
+    expect(cfg?.maxOutputTokens).toBe(1024);
+    expect(cfg?.responseSchema).toBeDefined();
+    const schema = cfg?.responseSchema as { required?: string[] };
+    expect(schema.required).toEqual(["score", "issues"]);
   });
 
   test("missing API key → score: null, error tagged", async () => {
