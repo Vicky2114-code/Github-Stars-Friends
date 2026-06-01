@@ -13,29 +13,41 @@
  *
  * Client component because clipboard API + button state need JS. The
  * surrounding page can be fully static; only this slice is interactive.
+ *
+ * Hydration: origin is resolved AFTER mount via useEffect. The first
+ * render — both on the server and on the initial client render — uses
+ * an empty origin so the SSR HTML and the client HTML match exactly.
+ * After mount we update state and the buttons re-render with real URLs.
+ * Without this discipline React logs a hydration mismatch warning.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export function ShareFooter({ fullName }: { fullName: string }) {
   const [copied, setCopied] = useState(false);
+  const [origin, setOrigin] = useState("");
 
-  // Use a stable absolute URL where possible; fall back to relative on SSR.
-  const base =
-    typeof window !== "undefined"
-      ? window.location.origin
-      : "https://repo-dive.app";
-  const pageUrl = `${base}/${fullName}`;
+  useEffect(() => {
+    setOrigin(window.location.origin);
+  }, []);
+
+  const pageUrl = origin ? `${origin}/${fullName}` : "";
+  const ready = pageUrl !== "";
 
   const xText = encodeURIComponent(
     `${fullName} on repo-dive — growth chart + AI Discoverability score`,
   );
-  const xUrl = `https://x.com/intent/post?text=${xText}&url=${encodeURIComponent(`${pageUrl}?ref=x`)}`;
-  const hnUrl = `https://news.ycombinator.com/submitlink?u=${encodeURIComponent(`${pageUrl}?ref=hn`)}&t=${encodeURIComponent(
-    `Show HN: ${fullName} on repo-dive`,
-  )}`;
+  const xUrl = ready
+    ? `https://x.com/intent/post?text=${xText}&url=${encodeURIComponent(`${pageUrl}?ref=x`)}`
+    : "#";
+  const hnUrl = ready
+    ? `https://news.ycombinator.com/submitlink?u=${encodeURIComponent(`${pageUrl}?ref=hn`)}&t=${encodeURIComponent(
+        `Show HN: ${fullName} on repo-dive`,
+      )}`
+    : "#";
 
   async function copyLink() {
+    if (!ready) return;
     try {
       await navigator.clipboard.writeText(`${pageUrl}?ref=copy`);
       setCopied(true);
@@ -45,6 +57,9 @@ export function ShareFooter({ fullName }: { fullName: string }) {
     }
   }
 
+  const buttonClass =
+    "rounded-md border border-zinc-700 bg-zinc-900 px-4 py-2 text-zinc-200 hover:border-zinc-600 hover:text-white aria-disabled:cursor-not-allowed aria-disabled:opacity-50";
+
   return (
     <footer className="mt-12 border-t border-zinc-800 pt-6">
       <div className="flex flex-col items-center gap-4">
@@ -53,7 +68,9 @@ export function ShareFooter({ fullName }: { fullName: string }) {
             href={xUrl}
             target="_blank"
             rel="noreferrer"
-            className="rounded-md border border-zinc-700 bg-zinc-900 px-4 py-2 text-zinc-200 hover:border-zinc-600 hover:text-white"
+            aria-disabled={!ready}
+            tabIndex={ready ? 0 : -1}
+            className={buttonClass}
           >
             Share on X
           </a>
@@ -61,14 +78,17 @@ export function ShareFooter({ fullName }: { fullName: string }) {
             href={hnUrl}
             target="_blank"
             rel="noreferrer"
-            className="rounded-md border border-zinc-700 bg-zinc-900 px-4 py-2 text-zinc-200 hover:border-zinc-600 hover:text-white"
+            aria-disabled={!ready}
+            tabIndex={ready ? 0 : -1}
+            className={buttonClass}
           >
             Submit to HN
           </a>
           <button
             type="button"
             onClick={copyLink}
-            className="rounded-md border border-zinc-700 bg-zinc-900 px-4 py-2 text-zinc-200 hover:border-zinc-600 hover:text-white"
+            disabled={!ready}
+            className={buttonClass}
           >
             {copied ? "Copied ✓" : "Copy link"}
           </button>
