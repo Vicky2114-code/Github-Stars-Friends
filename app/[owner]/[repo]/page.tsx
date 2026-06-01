@@ -17,6 +17,8 @@ import { notFound } from "next/navigation";
 import { GitHubDegradedError, GitHubNotFoundError } from "@/lib/github";
 import { getRepoMetaCached } from "@/lib/repo-meta-cached";
 
+import { ShareFooter } from "@/components/ShareFooter";
+
 import {
   AIDiscoverabilitySlot,
   ContributorSlot,
@@ -83,9 +85,7 @@ export default async function RepoPage({ params }: PageProps) {
         </Suspense>
       </div>
 
-      <footer className="mt-12 border-t border-zinc-800 pt-6 text-center text-sm text-zinc-500">
-        Made with <span className="text-zinc-300">repo-dive</span> · paste a repo URL to analyze yours
-      </footer>
+      <ShareFooter fullName={`${owner}/${repo}`} />
     </main>
   );
 }
