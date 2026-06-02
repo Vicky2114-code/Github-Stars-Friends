@@ -128,3 +128,70 @@
     @apply font-sans;
   }
 }
+
+/* Landing-page animations.
+   Performance: all transforms only (compositor-friendly). No layout/paint
+   thrash. Respects prefers-reduced-motion. */
+
+@keyframes aurora-orbit-a {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50%      { transform: translate3d(40px, -30px, 0) scale(1.08); }
+}
+
+@keyframes aurora-orbit-b {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50%      { transform: translate3d(-50px, 40px, 0) scale(1.12); }
+}
+
+@keyframes aurora-orbit-c {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50%      { transform: translate3d(30px, 60px, 0) scale(0.95); }
+}
+
+@keyframes button-shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes draw-chart {
+  from { stroke-dashoffset: 1000; }
+  to   { stroke-dashoffset: 0; }
+}
+
+.aurora-a { animation: aurora-orbit-a 22s ease-in-out infinite; }
+.aurora-b { animation: aurora-orbit-b 26s ease-in-out infinite; }
+.aurora-c { animation: aurora-orbit-c 30s ease-in-out infinite; }
+
+.button-shimmer {
+  background: linear-gradient(110deg, #f59e0b 0%, #fde68a 35%, #f59e0b 70%, #fde68a 100%);
+  background-size: 200% auto;
+  animation: button-shimmer 4s linear infinite;
+}
+
+.fade-in-up { animation: fade-in-up 0.7s ease-out backwards; }
+.draw-chart {
+  stroke-dasharray: 1000;
+  stroke-dashoffset: 1000;
+  animation: draw-chart 1.6s ease-out 0.4s forwards;
+}
+
+/* Subtle grid overlay (Vercel-style). */
+.grid-overlay {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 60% 50% at 50% 30%, black 30%, transparent 80%);
+}
+
+/* Honor user accessibility preference. */
+@media (prefers-reduced-motion: reduce) {
+  .aurora-a, .aurora-b, .aurora-c, .button-shimmer, .fade-in-up, .draw-chart {
+    animation: none !important;
+  }
+}
